@@ -9,7 +9,7 @@
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
 import path from 'path';
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, systemPreferences, desktopCapturer } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import MenuBuilder from './menu';
@@ -115,6 +115,20 @@ const createWindow = async () => {
 /**
  * Add event listeners...
  */
+
+ipcMain.handle(
+  'electronMain:getScreenAccess',
+  () => systemPreferences.getMediaAccessStatus('screen') === 'granted',
+);
+ipcMain.handle('electronMain:screen:getSources', () => {
+  return desktopCapturer
+    .getSources({ types: ['window', 'screen'] })
+    .then(async (sources) => {
+      return sources.map((source) => {
+        return source;
+      });
+    });
+});
 
 app.on('window-all-closed', () => {
   // Respect the OSX convention of having the application in memory even

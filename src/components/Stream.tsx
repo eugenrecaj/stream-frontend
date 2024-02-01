@@ -3,31 +3,13 @@ import { socket } from '../api/socket';
 import { servers } from '../api/config';
 
 const Stream = () => {
-  const [peerConnection, setPeerConnection] = useState<WebTransport>();
-  const [expectingAnswer, setExpectingAnswer] = useState(false);
-
+  const [peerConnection, setPeerConnectionm] = useState<WebTransport>();
   useEffect(() => {
     socket.auth = { room: 11 };
     socket.connect();
 
     socket.on('connect_error', (error) => {
       console.error('Connection Error:', error);
-    });
-
-    // When receiving an answer, check if you were expecting it
-    socket.on('answer', async (answer) => {
-      if (peerConnection && expectingAnswer) {
-        // Check the flag here
-        try {
-          await peerConnection.setRemoteDescription(
-            new RTCSessionDescription(answer),
-          );
-          setExpectingAnswer(false); // Reset the flag once the answer is processed
-        } catch (error) {
-          console.error('Error setting remote description:', error);
-          setExpectingAnswer(false); // Also reset the flag in case of error
-        }
-      }
     });
 
     return () => {
@@ -83,7 +65,7 @@ const Stream = () => {
     const stream = await captureScreen();
     const peerConnection = new RTCPeerConnection(servers);
 
-    setPeerConnection(peerConnection);
+    setPeerConnectionm(peerConnection);
 
     stream
       .getTracks()
@@ -95,14 +77,28 @@ const Stream = () => {
       }
     };
 
-    // Set expectingAnswer to true right after sending the offer
+    socket.on('answer', async (answer) => {
+      console.log(answer);
+
+      if (answer) {
+        try {
+          await peerConnection.setRemoteDescription(
+            new RTCSessionDescription(answer),
+          );
+        } catch (error) {
+          console.error('Error setting remote description:', error);
+        }
+      }
+    });
+
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
-    setExpectingAnswer(true); // Update here
 
     adjustBitrate(2000000, peerConnection);
 
     socket.emit('offer', { offer, room: 11 });
+
+    return peerConnection;
   };
 
   return (

@@ -74,7 +74,11 @@ const Stream = () => {
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit('candidate', event.candidate);
-        console.log('candidate');
+        console.log('ICE candidate:', event.candidate);
+      } else {
+        // All ICE candidates have been gathered
+        console.log('ICE gathering state complete');
+        socket.emit('candidate', null);
       }
     };
 

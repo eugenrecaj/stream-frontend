@@ -13,6 +13,8 @@ const VideoReceiver = () => {
     newPeerConnection.ontrack = (event) => {
       console.log(event);
       if (videoRef.current) {
+        console.log(event.streams[0]);
+
         videoRef.current.srcObject = event.streams[0];
       }
     };
@@ -28,8 +30,9 @@ const VideoReceiver = () => {
   useEffect(() => {
     if (!peerConnection) return;
 
-    socket.on('offer', async (offer) => {
-      console.log('offer', offer);
+    const offerHandler = async (offer) => {
+      if (!peerConnection) return;
+
       try {
         await peerConnection.setRemoteDescription(
           new RTCSessionDescription(offer),
@@ -40,18 +43,26 @@ const VideoReceiver = () => {
       } catch (error) {
         console.error('Error setting remote description:', error);
       }
-    });
+    };
 
-    socket.on('candidate', async (candidate): any => {
-      console.log('candidate', candidate);
-      if (candidate && peerConnection.signalingState !== 'closed') {
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (error) {
-          console.error('Error adding ICE candidate:', error);
-        }
+    const candidateHandler = async (candidate) => {
+      if (!peerConnection || peerConnection.signalingState === 'closed') return;
+
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (error) {
+        console.error('Error adding ICE candidate:', error);
       }
-    });
+    };
+
+    socket.on('offer', offerHandler);
+    socket.on('candidate', candidateHandler);
+
+    // Cleanup
+    return () => {
+      socket.off('offer', offerHandler);
+      socket.off('candidate', candidateHandler);
+    };
   }, [peerConnection]);
 
   return (

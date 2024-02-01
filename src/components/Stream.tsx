@@ -74,22 +74,9 @@ const Stream = () => {
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit('candidate', event.candidate);
+        console.log('candidate');
       }
     };
-
-    socket.on('answer', async (answer) => {
-      console.log(answer);
-
-      if (answer) {
-        try {
-          await peerConnection.setRemoteDescription(
-            new RTCSessionDescription(answer),
-          );
-        } catch (error) {
-          console.error('Error setting remote description:', error);
-        }
-      }
-    });
 
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
@@ -97,8 +84,27 @@ const Stream = () => {
     adjustBitrate(2000000, peerConnection);
 
     socket.emit('offer', { offer, room: 11 });
+    console.log('offer');
 
-    return peerConnection;
+    socket.on('answer', async (answer) => {
+      console.log('answer', answer);
+
+      if (answer) {
+        try {
+          if (peerConnection.signalingState === 'have-local-offer') {
+            await peerConnection.setRemoteDescription(
+              new RTCSessionDescription(answer),
+            );
+          } else {
+            console.error(
+              `Unexpected signaling state: ${peerConnection.signalingState}`,
+            );
+          }
+        } catch (error) {
+          console.error('Error setting remote description:', error);
+        }
+      }
+    });
   };
 
   return (

@@ -29,7 +29,7 @@ const VideoReceiver = () => {
     if (!peerConnection) return;
 
     socket.on('offer', async (offer) => {
-      console.log(offer);
+      console.log('offer', offer);
       try {
         await peerConnection.setRemoteDescription(
           new RTCSessionDescription(offer),
@@ -42,8 +42,8 @@ const VideoReceiver = () => {
       }
     });
 
-    socket.on('candidate', async (candidate) => {
-      console.log(candidate);
+    socket.on('candidate', async (candidate): any => {
+      console.log('candidate', candidate);
       if (candidate && peerConnection.signalingState !== 'closed') {
         try {
           await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));

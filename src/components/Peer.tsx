@@ -1,19 +1,44 @@
 import React, { useEffect, useRef, useState } from 'react';
+import io from 'socket.io-client';
 import { socket } from '../api/socket';
 import { servers } from '../api/config';
 
+const SERVER_URL = 'http://localhost:4000';
+
 const VideoChat = () => {
   const localVideoRef = useRef(null);
-  const remoteVideoRefs = useRef([]);
-  const [peers, setPeers] = useState([]);
-
+  const remoteVideoRef = useRef(null);
   const [localStream, setLocalStream] = useState(null);
+  const peerConnectionRef = useRef(null);
 
   useEffect(() => {
-    socket.auth = { room: '11' };
+    socket.auth = { room: 11 };
     socket.connect();
 
-    captureScreen();
+    socket.on('offer', (data) => {
+      const offer = JSON.parse(data);
+      handleOffer(offer);
+    });
+
+    socket.on('answer', (data) => {
+      const answer = JSON.parse(data);
+      peerConnectionRef.current.setRemoteDescription(
+        new RTCSessionDescription(answer),
+      );
+    });
+
+    socket.on('candidate', (data) => {
+      const candidate = JSON.parse(data);
+      peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+
+    return () => {
+      socket.disconnect();
+      localStream && localStream.getTracks().forEach((track) => track.stop());
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+      }
+    };
   }, []);
 
   const captureScreen = async () => {
@@ -35,111 +60,57 @@ const VideoChat = () => {
           },
         },
       });
-      localVideoRef.current.srcObject = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
       setLocalStream(stream);
-      joinRoom(stream);
+      initializePeerConnection(stream);
     } catch (err) {
       console.log(err);
     }
   };
 
-  const joinRoom = (stream) => {
-    const roomID = '11'; // This should be dynamically set or retrieved
-    socket.emit('join room', roomID);
+  const initializePeerConnection = (stream) => {
+    const peerConnection = new RTCPeerConnection(servers);
+    peerConnectionRef.current = peerConnection;
 
-    socket.on('update users', (users) => {
-      const peers = [];
-      users.forEach((userID) => {
-        const peer = createPeer(userID, socket.id, stream);
-        peers.push({ peerID: userID, peer });
-      });
-      setPeers(peers);
+    stream.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, stream);
     });
 
-    socket.on('offer', handleReceiveCall);
-
-    socket.on('answer', handleAnswer);
-
-    socket.on('candidate', handleNewICECandidateMsg);
-  };
-
-  const createPeer = (userID, callerID, stream) => {
-    const peer = new RTCPeerConnection(servers);
-
-    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
-
-    peer.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit('candidate', { to: userID, candidate: event.candidate });
+    peerConnection.ontrack = (event) => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
       }
     };
 
-    peer.ontrack = (event) => {
-      // Add remote stream to the appropriate video element
-    };
-
-    peer.createOffer().then((offer) => {
-      peer.setLocalDescription(offer);
-      socket.emit('offer', { to: userID, offer });
-    });
-
-    return peer;
-  };
-
-  const handleReceiveCall = ({ offer, from }) => {
-    const peer = new RTCPeerConnection(servers);
-
-    // Ensure peers list is updated correctly
-    const newPeer = { peerID: from, peer };
-    setPeers((prevPeers) => [...prevPeers, newPeer]);
-
-    if (localStream) {
-      localStream
-        .getTracks()
-        .forEach((track) => peer.addTrack(track, localStream));
-    } else {
-      console.error('Local stream not available');
-      // Consider fetching the local stream here if it's essential or delay handling until the stream is available
-    }
-
-    peer.onicecandidate = (event) => {
+    peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        socket.emit('candidate', { to: from, candidate: event.candidate });
+        socket.emit('candidate', JSON.stringify(event.candidate));
       }
     };
 
-    peer.ontrack = (event) => {
-      // Implementation for adding remote stream to the appropriate video element
-    };
-
-    peer
-      .setRemoteDescription(new RTCSessionDescription(offer))
-      .then(() => {
-        peer
-          .createAnswer()
-          .then((answer) => {
-            peer.setLocalDescription(answer);
-            socket.emit('answer', { to: from, answer });
-          })
-          .catch((error) => console.error('Error creating answer:', error));
-      })
-      .catch((error) =>
-        console.error('Error setting remote description:', error),
-      );
+    peerConnection.createOffer().then((offer) => {
+      peerConnection.setLocalDescription(offer);
+      socket.emit('offer', JSON.stringify(offer));
+    });
   };
 
-  const handleAnswer = ({ answer, from }) => {
-    const item = peers.find((p) => p.peerID === from);
-    item && item.peer.setRemoteDescription(new RTCSessionDescription(answer));
-  };
-
-  const handleNewICECandidateMsg = ({ candidate, from }) => {
-    const item = peers.find((p) => p.peerID === from);
-    item && item.peer.addIceCandidate(new RTCIceCandidate(candidate));
+  const handleOffer = (offer) => {
+    peerConnectionRef.current.setRemoteDescription(
+      new RTCSessionDescription(offer),
+    );
+    peerConnectionRef.current.createAnswer().then((answer) => {
+      peerConnectionRef.current.setLocalDescription(answer);
+      socket.emit('answer', JSON.stringify(answer));
+    });
   };
 
   return (
     <div>
+      <div>
+        <button onClick={() => captureScreen()}>Start stream</button>
+      </div>
       <video
         playsInline
         muted
@@ -147,15 +118,12 @@ const VideoChat = () => {
         autoPlay
         style={{ width: '240px' }}
       />
-      {peers.map((peer, index) => (
-        <video
-          key={index}
-          playsInline
-          ref={(el) => (remoteVideoRefs.current[index] = el)}
-          autoPlay
-          style={{ width: '240px' }}
-        />
-      ))}
+      <video
+        playsInline
+        ref={remoteVideoRef}
+        autoPlay
+        style={{ width: '240px' }}
+      />
     </div>
   );
 };

@@ -1,15 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Peer from 'simple-peer';
+import io from 'socket.io-client';
 import { socket } from '../api/socket';
 
-import * as proccess from 'process';
-
-global.process = proccess;
+const SERVER_URL = 'http://localhost:4000';
 
 const VideoChat = () => {
-  const [peer, setPeer] = useState(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const [localStream, setLocalStream] = useState(null);
+  const peerConnectionRef = useRef(null);
 
   useEffect(() => {
     socket.auth = { room: 11 };
@@ -17,10 +16,28 @@ const VideoChat = () => {
 
     captureScreen();
 
+    socket.on('offer', (data) => {
+      const offer = JSON.parse(data);
+      handleOffer(offer);
+    });
+
+    socket.on('answer', (data) => {
+      const answer = JSON.parse(data);
+      peerConnectionRef.current.setRemoteDescription(
+        new RTCSessionDescription(answer),
+      );
+    });
+
+    socket.on('candidate', (data) => {
+      const candidate = JSON.parse(data);
+      peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+
     return () => {
       socket.disconnect();
-      if (peer) {
-        peer.destroy();
+      localStream && localStream.getTracks().forEach((track) => track.stop());
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
       }
     };
   }, []);
@@ -47,40 +64,52 @@ const VideoChat = () => {
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
-
-      const peer = new Peer({
-        initiator: window.location.hash === '',
-        trickle: false,
-        stream,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' }, // Google's public STUN server
-          ],
-        },
-      });
-
-      peer.on('signal', (data) => {
-        console.log(data);
-
-        socket.emit('offer', JSON.stringify(data));
-      });
-
-      socket.on('offer', (data) => {
-        console.log(data);
-        peer.signal(JSON.parse(data));
-      });
-
-      peer.on('stream', (stream) => {
-        console.log(stream);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream;
-        }
-      });
-
-      setPeer(peer);
+      setLocalStream(stream);
+      initializePeerConnection(stream);
     } catch (err) {
       console.log(err);
     }
+  };
+
+  const initializePeerConnection = (stream) => {
+    const configuration = {
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    };
+    const peerConnection = new RTCPeerConnection(configuration);
+    peerConnectionRef.current = peerConnection;
+
+    stream.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, stream);
+    });
+
+    peerConnection.ontrack = (event) => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('candidate', JSON.stringify(event.candidate));
+      }
+    };
+
+    if (window.location.hash === '#init') {
+      peerConnection.createOffer().then((offer) => {
+        peerConnection.setLocalDescription(offer);
+        socket.emit('offer', JSON.stringify(offer));
+      });
+    }
+  };
+
+  const handleOffer = (offer) => {
+    peerConnectionRef.current.setRemoteDescription(
+      new RTCSessionDescription(offer),
+    );
+    peerConnectionRef.current.createAnswer().then((answer) => {
+      peerConnectionRef.current.setLocalDescription(answer);
+      socket.emit('answer', JSON.stringify(answer));
+    });
   };
 
   return (

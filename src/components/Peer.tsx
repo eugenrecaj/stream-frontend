@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
 import { socket } from '../api/socket';
+import { servers } from '../api/config';
 
 const SERVER_URL = 'http://localhost:4000';
 
@@ -72,10 +73,7 @@ const VideoChat = () => {
   };
 
   const initializePeerConnection = (stream) => {
-    const configuration = {
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-    };
-    const peerConnection = new RTCPeerConnection(configuration);
+    const peerConnection = new RTCPeerConnection(servers);
     peerConnectionRef.current = peerConnection;
 
     stream.getTracks().forEach((track) => {

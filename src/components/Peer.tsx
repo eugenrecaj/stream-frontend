@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import Peer from 'simple-peer';
 import { socket } from '../api/socket';
 
+import * as proccess from 'process';
+
+global.process = proccess;
+
 const VideoChat = () => {
   const [peer, setPeer] = useState(null);
   const localVideoRef = useRef(null);
@@ -45,7 +49,7 @@ const VideoChat = () => {
       }
 
       const peer = new Peer({
-        initiator: window.location.hash === '#init',
+        initiator: window.location.hash === '',
         trickle: false,
         stream,
       });

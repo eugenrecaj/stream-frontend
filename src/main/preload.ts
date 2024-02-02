@@ -22,10 +22,10 @@ const electronHandler = {
       ipcRenderer.once(channel, (_event, ...args) => func(...args));
     },
     openScreenSecurity: () =>
-    ipcRenderer.invoke('electronMain:openScreenSecurity'),
-  getScreenAccess: () => ipcRenderer.invoke('electronMain:getScreenAccess'),
-  getScreenSources: () =>
-    ipcRenderer.invoke('electronMain:screen:getSources'),
+      ipcRenderer.invoke('electronMain:openScreenSecurity'),
+    getScreenAccess: () => ipcRenderer.invoke('electronMain:getScreenAccess'),
+    getScreenSources: () =>
+      ipcRenderer.invoke('electronMain:screen:getSources'),
   },
 };
 

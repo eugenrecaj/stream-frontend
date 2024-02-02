@@ -94,7 +94,7 @@ const VideoChat = () => {
       }
     };
 
-    if (window.location.hash === '#init') {
+    if (window.location.hash === '') {
       peerConnection.createOffer().then((offer) => {
         peerConnection.setLocalDescription(offer);
         socket.emit('offer', JSON.stringify(offer));

@@ -1,49 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Peer from 'simple-peer';
-import styled from 'styled-components';
 import { socket } from '../api/socket';
 
-const Container = styled.div`
-  padding: 20px;
-  display: flex;
-  height: 100vh;
-  width: 90%;
-  margin: auto;
-  flex-wrap: wrap;
-`;
-
-const StyledVideo = styled.video`
-  height: 800px;
-  width: 800px;
-`;
-
-const Video = (props) => {
-  const ref = useRef();
+const VideoChat = () => {
+  const [peer, setPeer] = useState(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
 
   useEffect(() => {
-    props.peer.on('stream', (stream) => {
-      ref.current.srcObject = stream;
-    });
-  }, []);
-
-  return <StyledVideo playsInline autoPlay ref={ref} />;
-};
-
-const videoConstraints = {
-  height: window.innerHeight / 2,
-  width: window.innerWidth / 2,
-};
-
-export const PeerVideo = (props) => {
-  const [peers, setPeers] = useState([]);
-  const userVideo = useRef();
-  const peersRef = useRef([]);
-  const roomID = '11';
-
-  useEffect(() => {
-    socket.auth = { room: roomID };
+    socket.auth = { room: 11 };
     socket.connect();
+
     captureScreen();
+
+    return () => {
+      socket.disconnect();
+      if (peer) {
+        peer.destroy();
+      }
+    };
   }, []);
 
   const captureScreen = async () => {
@@ -65,87 +40,57 @@ export const PeerVideo = (props) => {
           },
         },
       });
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
 
-      userVideo.current.srcObject = stream;
-      socket.emit('join room', { room: roomID });
-      socket.on('all users', (users) => {
-        console.log(users);
-        const peers = [];
-        users.forEach((userID) => {
-          const peer = createPeer(userID, socket.id, stream);
-          peersRef.current.push({
-            peerID: userID,
-            peer,
-          });
-          peers.push(peer);
-        });
-        setPeers(peers);
+      const peer = new Peer({
+        initiator: window.location.hash === '#init',
+        trickle: false,
+        stream,
       });
 
-      socket.on('user joined', (payload) => {
-        console.log(payload);
+      peer.on('signal', (data) => {
+        console.log(data);
 
-        const peer = addPeer(payload.signal, payload.callerID, stream);
-        peersRef.current.push({
-          peerID: payload.callerID,
-          peer,
-        });
-
-        setPeers((users) => [...users, peer]);
+        socket.emit('offer', JSON.stringify(data));
       });
 
-      socket.on('receiving returned signal', (payload) => {
-        const item = peersRef.current.find((p) => p.peerID === payload.id);
-        item.peer.signal(payload.signal);
+      socket.on('offer', (data) => {
+        console.log(data);
+        peer.signal(JSON.parse(data));
       });
+
+      peer.on('stream', (stream) => {
+        console.log(stream);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = stream;
+        }
+      });
+
+      setPeer(peer);
     } catch (err) {
       console.log(err);
     }
   };
 
-  function createPeer(userToSignal, callerID, stream) {
-    const peer = new Peer({
-      initiator: true,
-      trickle: false,
-      stream,
-    });
-
-    peer.on('signal', (signal) => {
-      console.log(signal);
-
-      socket.emit('sending signal', {
-        userToSignal,
-        callerID,
-        signal,
-      });
-    });
-
-    return peer;
-  }
-
-  function addPeer(incomingSignal, callerID, stream) {
-    const peer = new Peer({
-      initiator: false,
-      trickle: false,
-      stream,
-    });
-
-    peer.on('signal', (signal) => {
-      console.log(signal);
-      socket.emit('returning signal', { signal, callerID });
-    });
-
-    peer.signal(incomingSignal);
-
-    return peer;
-  }
-
   return (
-    <Container>
-      <StyledVideo muted ref={userVideo} autoPlay playsInline />
-      {peers.map((peer, index) => {
-        return <Video key={index} peer={peer} />;
-      })}
-    </Container>
+    <div>
+      <video
+        playsInline
+        muted
+        ref={localVideoRef}
+        autoPlay
+        style={{ width: '240px' }}
+      />
+      <video
+        playsInline
+        ref={remoteVideoRef}
+        autoPlay
+        style={{ width: '240px' }}
+      />
+    </div>
   );
 };
+
+export default VideoChat;
